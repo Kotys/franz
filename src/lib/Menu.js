@@ -1,9 +1,9 @@
 import { remote, shell } from 'electron';
 import { autorun, computed, observable, toJS } from 'mobx';
 
-import { isDevMode, isMac } from '../environment';
+import { isMac } from '../environment';
 
-const { app, Menu } = remote;
+const { app, Menu, dialog } = remote;
 
 const template = [
   {
@@ -49,6 +49,7 @@ const template = [
       },
       {
         role: 'zoomin',
+        accelerator: 'CommandOrControl+=',
       },
       {
         role: 'zoomout',
@@ -83,6 +84,28 @@ const template = [
         label: 'Learn More',
         click() { shell.openExternal('http://meetfranz.com'); },
       },
+      {
+        label: 'Changelog',
+        click() { shell.openExternal('https://github.com/meetfranz/franz/blob/master/CHANGELOG.md'); },
+      },
+      {
+        type: 'separator',
+      },
+      {
+        label: 'Support',
+        click() { shell.openExternal('http://meetfranz.com/support'); },
+      },
+      {
+        type: 'separator',
+      },
+      {
+        label: 'Terms of Service',
+        click() { shell.openExternal('https://meetfranz.com/terms'); },
+      },
+      {
+        label: 'Privacy Statement',
+        click() { shell.openExternal('https://meetfranz.com/privacy'); },
+      },
     ],
   },
 ];
@@ -100,17 +123,15 @@ export default class FranzMenu {
   _build() {
     const tpl = toJS(this.tpl);
 
-    if (isDevMode) {
-      tpl[1].submenu.push({
-        role: 'toggledevtools',
-      }, {
-        label: 'Toggle Service Developer Tools',
-        accelerator: 'CmdOrCtrl+Shift+Alt+i',
-        click: () => {
-          this.actions.service.openDevToolsForActiveService();
-        },
-      });
-    }
+    tpl[1].submenu.push({
+      role: 'toggledevtools',
+    }, {
+      label: 'Toggle Service Developer Tools',
+      accelerator: 'CmdOrCtrl+Shift+Alt+i',
+      click: () => {
+        this.actions.service.openDevToolsForActiveService();
+      },
+    });
 
     tpl[1].submenu.unshift({
       label: 'Reload Service',
@@ -193,30 +214,18 @@ export default class FranzMenu {
           ],
         },
       );
-      // Window menu.
-      tpl[3].submenu = [
-        {
-          // label: 'Close',
-          accelerator: 'CmdOrCtrl+W',
-          role: 'close',
+    } else {
+      tpl[4].submenu.unshift({
+        role: 'about',
+        click: () => {
+          dialog.showMessageBox({
+            type: 'info',
+            title: 'Franz',
+            message: 'Franz',
+            detail: `Version: ${remote.app.getVersion()}\nRelease: ${process.versions.electron} / ${process.platform} / ${process.arch}`,
+          });
         },
-        {
-          // label: 'Minimize',
-          accelerator: 'CmdOrCtrl+M',
-          role: 'minimize',
-        },
-        {
-          // label: 'Zoom',
-          role: 'zoom',
-        },
-        {
-          type: 'separator',
-        },
-        {
-          // label: 'Bring All to Front',
-          role: 'front',
-        },
-      ];
+      });
     }
 
     const serviceTpl = this.serviceTpl;
@@ -244,7 +253,7 @@ export default class FranzMenu {
 
     if (this.stores.user.isLoggedIn) {
       return services.map((service, i) => ({
-        label: service.name,
+        label: this._getServiceName(service),
         accelerator: i <= 9 ? `CmdOrCtrl+${i + 1}` : null,
         type: 'radio',
         checked: service.isActive,
@@ -255,5 +264,21 @@ export default class FranzMenu {
     }
 
     return [];
+  }
+
+  _getServiceName(service) {
+    if (service.name) {
+      return service.name;
+    }
+
+    let name = service.recipe.name;
+
+    if (service.team) {
+      name = `${name} (${service.team})`;
+    } else if (service.customUrl) {
+      name = `${name} (${service.customUrl})`;
+    }
+
+    return name;
   }
 }

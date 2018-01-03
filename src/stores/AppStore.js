@@ -2,23 +2,23 @@ import { remote, ipcRenderer, shell } from 'electron';
 import { action, observable } from 'mobx';
 import moment from 'moment';
 import key from 'keymaster';
-import path from 'path';
+import { getDoNotDisturb } from '@meetfranz/electron-notification-state';
 import idleTimer from '@paulcbetts/system-idle-time';
+import AutoLaunch from 'auto-launch';
 
 import Store from './lib/Store';
 import Request from './lib/Request';
-import { CHECK_INTERVAL } from '../config';
-import { isMac, isLinux } from '../environment';
+import { CHECK_INTERVAL, DEFAULT_APP_SETTINGS } from '../config';
+import { isMac } from '../environment';
 import locales from '../i18n/translations';
 import { gaEvent } from '../lib/analytics';
 import Miner from '../lib/Miner';
 
-const { app, getCurrentWindow, powerMonitor } = remote;
-const defaultLocale = 'en-US';
-
-const appFolder = path.dirname(process.execPath);
-const updateExe = path.resolve(appFolder, '..', 'Update.exe');
-const exeName = path.basename(process.execPath);
+const { app, powerMonitor } = remote;
+const defaultLocale = DEFAULT_APP_SETTINGS.locale;
+const autoLauncher = new AutoLaunch({
+  name: 'Franz',
+});
 
 export default class AppStore extends Store {
   updateStatusTypes = {
@@ -45,7 +45,9 @@ export default class AppStore extends Store {
   miner = null;
   @observable minerHashrate = 0.0;
 
-  constructor(...args: any) {
+  @observable isSystemMuted = false;
+
+  constructor(...args) {
     super(...args);
 
     // Register action handlers
@@ -57,6 +59,8 @@ export default class AppStore extends Store {
     this.actions.app.installUpdate.listen(this._installUpdate.bind(this));
     this.actions.app.resetUpdateStatus.listen(this._resetUpdateStatus.bind(this));
     this.actions.app.healthCheck.listen(this._healthCheck.bind(this));
+    this.actions.app.muteApp.listen(this._muteApp.bind(this));
+    this.actions.app.toggleMuteApp.listen(this._toggleMuteApp.bind(this));
 
     this.registerReactions([
       this._offlineCheck.bind(this),
@@ -81,10 +85,15 @@ export default class AppStore extends Store {
     // Needs to be delayed a bit
     this._autoStart();
 
+    // Check if system is muted
+    // There are no events to subscribe so we need to poll everey 5s
+    this._systemDND();
+    setInterval(() => this._systemDND(), 5000);
+
     // Check for updates once every 4 hours
     setInterval(() => this._checkForUpdates(), CHECK_INTERVAL);
     // Check for an update in 30s (need a delay to prevent Squirrel Installer lock file issues)
-    setTimeout(() => this._checkForUpdates(), 3000);
+    setTimeout(() => this._checkForUpdates(), 30000);
     ipcRenderer.on('autoUpdate', (event, data) => {
       if (data.available) {
         this.updateStatus = this.updateStatusTypes.AVAILABLE;
@@ -116,14 +125,23 @@ export default class AppStore extends Store {
       setTimeout(window.location.reload, 5000);
     });
 
-    // Open Dev Tools (even in production mode)
-    key('⌘+ctrl+shift+alt+i, ctrl+shift+alt+i', () => {
-      getCurrentWindow().toggleDevTools();
-    });
+    // Set active the next service
+    key(
+      '⌘+pagedown, ctrl+pagedown, ⌘+alt+right, ctrl+tab', () => {
+        this.actions.service.setActiveNext();
+      });
 
-    key('⌘+ctrl+shift+alt+pageup, ctrl+shift+alt+pageup', () => {
-      this.actions.service.openDevToolsForActiveService();
-    });
+    // Set active the prev service
+    key(
+      '⌘+pageup, ctrl+pageup, ⌘+alt+left, ctrl+shift+tab', () => {
+        this.actions.service.setActivePrev();
+      });
+
+    // Global Mute 
+    key(
+      '⌘+shift+m ctrl+shift+m', () => {
+        this.actions.app.toggleMuteApp();
+      });
 
     this.locale = this._getDefaultLocale();
 
@@ -153,31 +171,25 @@ export default class AppStore extends Store {
       indicator = '•';
     } else if (unreadDirectMessageCount === 0 && unreadIndirectMessageCount === 0) {
       indicator = 0;
+    } else {
+      indicator = parseInt(indicator, 10);
     }
 
     ipcRenderer.send('updateAppIndicator', { indicator });
   }
 
-  @action _launchOnStartup({ enable, openInBackground }) {
+  @action _launchOnStartup({ enable }) {
     this.autoLaunchOnStart = enable;
 
-    const settings = {
-      openAtLogin: enable,
-      openAsHidden: openInBackground,
-      path: updateExe,
-      args: [
-        '--processStart', `"${exeName}"`,
-      ],
-    };
-
-    // For Windows
-    if (openInBackground) {
-      settings.args.push(
-        '--process-start-args', '"--hidden"',
-      );
+    try {
+      if (enable) {
+        autoLauncher.enable();
+      } else {
+        autoLauncher.disable();
+      }
+    } catch (err) {
+      console.warn(err);
     }
-
-    app.setLoginItemSettings(settings);
 
     gaEvent('App', enable ? 'enable autostart' : 'disable autostart');
   }
@@ -203,6 +215,18 @@ export default class AppStore extends Store {
 
   @action _healthCheck() {
     this.healthCheckRequest.execute();
+  }
+
+  @action _muteApp({ isMuted }) {
+    this.actions.settings.update({
+      settings: {
+        isAppMuted: isMuted,
+      },
+    });
+  }
+
+  @action _toggleMuteApp() {
+    this._muteApp({ isMuted: !this.stores.settings.all.isAppMuted });
   }
 
   // Reactions
@@ -285,25 +309,23 @@ export default class AppStore extends Store {
   }
 
   async _autoStart() {
-    if (!isLinux) {
-      this._checkAutoStart();
+    this.autoLaunchOnStart = await this._checkAutoStart();
 
-      // we need to wait until the settings request is resolved
-      await this.stores.settings.allSettingsRequest;
+    // we need to wait until the settings request is resolved
+    await this.stores.settings.allSettingsRequest;
 
-      if (!this.stores.settings.all.appStarts) {
-        this.actions.app.launchOnStartup({
-          enable: true,
-        });
-      }
+    if (!this.stores.settings.all.appStarts) {
+      this.actions.app.launchOnStartup({
+        enable: true,
+      });
     }
   }
 
-  _checkAutoStart() {
-    const loginItem = app.getLoginItemSettings({
-      path: updateExe,
-    });
+  async _checkAutoStart() {
+    return autoLauncher.isEnabled() || false;
+  }
 
-    this.autoLaunchOnStart = loginItem.openAtLogin;
+  _systemDND() {
+    this.isSystemMuted = getDoNotDisturb();
   }
 }

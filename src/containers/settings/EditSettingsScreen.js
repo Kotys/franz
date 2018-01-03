@@ -7,8 +7,9 @@ import AppStore from '../../stores/AppStore';
 import SettingsStore from '../../stores/SettingsStore';
 import UserStore from '../../stores/UserStore';
 import Form from '../../lib/Form';
-import languages from '../../i18n/languages';
+import { APP_LOCALES } from '../../i18n/languages';
 import { gaPage } from '../../lib/analytics';
+import { DEFAULT_APP_SETTINGS } from '../../config';
 
 
 import EditSettingsForm from '../../components/settings/settings/EditSettingsForm';
@@ -26,6 +27,10 @@ const messages = defineMessages({
     id: 'settings.app.form.runInBackground',
     defaultMessage: '!!!Keep Franz in background when closing the window',
   },
+  enableSystemTray: {
+    id: 'settings.app.form.enableSystemTray',
+    defaultMessage: '!!!Show Franz in system tray',
+  },
   minimizeToSystemTray: {
     id: 'settings.app.form.minimizeToSystemTray',
     defaultMessage: '!!!Minimize Franz to system tray',
@@ -34,6 +39,22 @@ const messages = defineMessages({
     id: 'settings.app.form.language',
     defaultMessage: '!!!Language',
   },
+  showDisabledServices: {
+    id: 'settings.app.form.showDisabledServices',
+    defaultMessage: '!!!Display disabled services tabs',
+  },
+  enableSpellchecking: {
+    id: 'settings.app.form.enableSpellchecking',
+    defaultMessage: '!!!Enable spell checking',
+  },
+  spellcheckingLanguage: {
+    id: 'settings.app.form.spellcheckingLanguage',
+    defaultMessage: '!!!Language for spell checking',
+  },
+  // spellcheckingAutomaticDetection: {
+  //   id: 'settings.app.form.spellcheckingAutomaticDetection',
+  //   defaultMessage: '!!!Detect language automatically',
+  // },
   beta: {
     id: 'settings.app.form.beta',
     defaultMessage: '!!!Include beta versions',
@@ -61,7 +82,11 @@ export default class EditSettingsScreen extends Component {
     settings.update({
       settings: {
         runInBackground: settingsData.runInBackground,
+        enableSystemTray: settingsData.enableSystemTray,
         minimizeToSystemTray: settingsData.minimizeToSystemTray,
+        showDisabledServices: settingsData.showDisabledServices,
+        enableSpellchecking: settingsData.enableSpellchecking,
+        // spellcheckingLanguage: settingsData.spellcheckingLanguage,
         locale: settingsData.locale,
         beta: settingsData.beta,
       },
@@ -78,46 +103,78 @@ export default class EditSettingsScreen extends Component {
     const { app, settings, user } = this.props.stores;
     const { intl } = this.context;
 
-    const options = [];
-    Object.keys(languages).forEach((key) => {
-      options.push({
+    const locales = [];
+    Object.keys(APP_LOCALES).forEach((key) => {
+      locales.push({
         value: key,
-        label: languages[key],
+        label: APP_LOCALES[key],
       });
     });
+
+    // const spellcheckerLocales = [{
+    //   value: 'auto',
+    //   label: intl.formatMessage(messages.spellcheckingAutomaticDetection),
+    // }];
+    // Object.keys(SPELLCHECKER_LOCALES).forEach((key) => {
+    //   spellcheckerLocales.push({
+    //     value: key,
+    //     label: SPELLCHECKER_LOCALES[key],
+    //   });
+    // });
 
     const config = {
       fields: {
         autoLaunchOnStart: {
           label: intl.formatMessage(messages.autoLaunchOnStart),
           value: app.autoLaunchOnStart,
-          default: true,
+          default: DEFAULT_APP_SETTINGS.autoLaunchOnStart,
         },
         autoLaunchInBackground: {
           label: intl.formatMessage(messages.autoLaunchInBackground),
           value: app.launchInBackground,
-          default: false,
+          default: DEFAULT_APP_SETTINGS.autoLaunchInBackground,
         },
         runInBackground: {
           label: intl.formatMessage(messages.runInBackground),
           value: settings.all.runInBackground,
-          default: true,
+          default: DEFAULT_APP_SETTINGS.runInBackground,
+        },
+        enableSystemTray: {
+          label: intl.formatMessage(messages.enableSystemTray),
+          value: settings.all.enableSystemTray,
+          default: DEFAULT_APP_SETTINGS.enableSystemTray,
         },
         minimizeToSystemTray: {
           label: intl.formatMessage(messages.minimizeToSystemTray),
           value: settings.all.minimizeToSystemTray,
-          default: false,
+          default: DEFAULT_APP_SETTINGS.minimizeToSystemTray,
         },
+        showDisabledServices: {
+          label: intl.formatMessage(messages.showDisabledServices),
+          value: settings.all.showDisabledServices,
+          default: DEFAULT_APP_SETTINGS.showDisabledServices,
+        },
+        enableSpellchecking: {
+          label: intl.formatMessage(messages.enableSpellchecking),
+          value: settings.all.enableSpellchecking,
+          default: DEFAULT_APP_SETTINGS.enableSpellchecking,
+        },
+        // spellcheckingLanguage: {
+        //   label: intl.formatMessage(messages.spellcheckingLanguage),
+        //   value: settings.all.spellcheckingLanguage,
+        //   options: spellcheckerLocales,
+        //   default: DEFAULT_APP_SETTINGS.spellcheckingLanguage,
+        // },
         locale: {
           label: intl.formatMessage(messages.language),
           value: app.locale,
-          options,
-          default: 'en-US',
+          options: locales,
+          default: DEFAULT_APP_SETTINGS.locale,
         },
         beta: {
           label: intl.formatMessage(messages.beta),
           value: user.data.beta,
-          default: false,
+          default: DEFAULT_APP_SETTINGS.beta,
         },
       },
     };

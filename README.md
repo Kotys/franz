@@ -9,16 +9,16 @@
 
 Messaging app for WhatsApp, Slack, Telegram, HipChat, Hangouts and many many more.
 
+## [Download Franz](https://www.meetfranz.com)
+👉 www.meetfranz.com
+
 
 ## Development
 
 ### Preparations
 
-#### Install OS Dependencies
-##### Linux (Debian/Ubuntu)
-```bash
-$ apt install libx11-dev libxext-dev libxss-dev libxkbfile-dev
-```
+#### Install Linux OS dependencies
+[Guide: Linux distribution specific dependencies](docs/linux.md)
 
 #### Install yarn
 ##### MacOS

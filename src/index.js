@@ -2,32 +2,51 @@ import { app, BrowserWindow, shell } from 'electron';
 import fs from 'fs-extra';
 import path from 'path';
 
-// eslint-disable-next-line
-if (require('electron-squirrel-startup')) app.quit();
+import windowStateKeeper from 'electron-window-state';
 
-import windowStateKeeper from 'electron-window-state'; // eslint-disable-line
-
-import { isDevMode, isWindows } from './environment';  // eslint-disable-line
-import ipcApi from './electron/ipc-api';  // eslint-disable-line
-import Settings from './electron/Settings';  // eslint-disable-line
-import { appId } from './package.json'; // eslint-disable-line
-import './electron/exception'; // eslint-disable-line
+import { isDevMode, isWindows } from './environment';
+import ipcApi from './electron/ipc-api';
+import Tray from './lib/Tray';
+import Settings from './electron/Settings';
+import { appId } from './package.json'; // eslint-disable-line import/no-unresolved
+import './electron/exception';
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow;
-const settings = new Settings();
 let willQuitApp = false;
 
 // Ensure that the recipe directory exists
 fs.ensureDir(path.join(app.getPath('userData'), 'recipes'));
+fs.emptyDirSync(path.join(app.getPath('userData'), 'recipes', 'temp'));
 
 // Set App ID for Windows
 if (isWindows) {
   app.setAppUserModelId(appId);
 }
 
-const createWindow = async () => {
+// Force single window
+const isSecondInstance = app.makeSingleInstance(() => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
+if (isSecondInstance) {
+  app.exit();
+}
+
+// Lets disable Hardware Acceleration until we have a better solution
+// to deal with the high-perf-gpu requirement of some services
+
+// Disabled to test tweetdeck glitches
+// app.disableHardwareAcceleration();
+
+// Initialize Settings
+const settings = new Settings();
+
+const createWindow = () => {
   // Remember window size
   const mainWindowState = windowStateKeeper({
     defaultWidth: 800,
@@ -40,15 +59,18 @@ const createWindow = async () => {
     y: mainWindowState.y,
     width: mainWindowState.width,
     height: mainWindowState.height,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth: 600,
+    minHeight: 500,
     titleBarStyle: 'hidden',
     backgroundColor: '#3498db',
     autoHideMenuBar: true,
   });
 
+  // Initialize System Tray
+  const trayIcon = new Tray();
+
   // Initialize ipcApi
-  ipcApi({ mainWindow, settings });
+  ipcApi({ mainWindow, settings, trayIcon });
 
   // Manage Window State
   mainWindowState.manage(mainWindow);
@@ -68,9 +90,13 @@ const createWindow = async () => {
     // when you should delete the corresponding element.
     if (!willQuitApp && (settings.get('runInBackground') === undefined || settings.get('runInBackground'))) {
       e.preventDefault();
-      mainWindow.hide();
+      if (isWindows) {
+        mainWindow.minimize();
+      } else {
+        mainWindow.hide();
+      }
 
-      if (process.platform === 'win32') {
+      if (isWindows && settings.get('minimizeToSystemTray')) {
         mainWindow.setSkipTaskbar(true);
       }
     } else {
@@ -85,6 +111,7 @@ const createWindow = async () => {
 
     if (settings.get('minimizeToSystemTray')) {
       mainWindow.setSkipTaskbar(true);
+      trayIcon.show();
     }
   });
 
@@ -101,6 +128,10 @@ const createWindow = async () => {
 
     if (app.wasMaximized) {
       mainWindow.maximize();
+    }
+
+    if (!settings.get('enableSystemTray')) {
+      trayIcon.hide();
     }
   });
 

@@ -1,6 +1,6 @@
 import os from 'os';
 import path from 'path';
-import targz from 'tar.gz';
+import tar from 'tar';
 import fs from 'fs-extra';
 import { remote } from 'electron';
 
@@ -293,7 +293,11 @@ export default class ServerApi {
       const buffer = await res.buffer();
       fs.writeFileSync(archivePath, buffer);
 
-      await targz().extract(archivePath, recipeTempDirectory);
+      tar.x({
+        file: archivePath,
+        cwd: recipeTempDirectory,
+        sync: true,
+      });
 
       const { id } = fs.readJsonSync(path.join(recipeTempDirectory, 'package.json'));
       const recipeDirectory = path.join(recipesDirectory, id);
@@ -370,7 +374,7 @@ export default class ServerApi {
   // News
   async getLatestNews() {
     // eslint-disable-next-line
-    const request = await window.fetch(`${SERVER_URL}/${API_VERSION}/news?platform=${os.platform()}&arch=${os.arch()}version=${app.getVersion()}`,
+    const request = await window.fetch(`${SERVER_URL}/${API_VERSION}/news?platform=${os.platform()}&arch=${os.arch()}&version=${app.getVersion()}`,
       this._prepareAuthRequest({
         method: 'GET',
       }));
@@ -443,6 +447,10 @@ export default class ServerApi {
 
   // Helper
   async _mapServiceModels(services) {
+    const recipes = services.map(s => s.recipeId);
+
+    await this._bulkRecipeCheck(recipes);
+
     return Promise.all(services
       .map(async service => await this._prepareServiceModel(service)) // eslint-disable-line
     );
@@ -454,19 +462,8 @@ export default class ServerApi {
       recipe = this.recipes.find(r => r.id === service.recipeId);
 
       if (!recipe) {
-        console.warn(`Recipe '${service.recipeId}' not installed, trying to fetch from server`);
-
-        await this.getRecipePackage(service.recipeId);
-
-        console.debug('Rerun ServerAPI::getInstalledRecipes');
-        await this.getInstalledRecipes();
-
-        recipe = this.recipes.find(r => r.id === service.recipeId);
-
-        if (!recipe) {
-          console.warn(`Could not load recipe ${service.recipeId}`);
-          return null;
-        }
+        console.warn(`Recipe ${service.recipeId} not loaded`);
+        return null;
       }
 
       return new ServiceModel(service, recipe);
@@ -474,6 +471,35 @@ export default class ServerApi {
       console.debug(e);
       return null;
     }
+  }
+
+  async _bulkRecipeCheck(unfilteredRecipes) {
+    // Filter recipe duplicates as we don't need to download 3 Slack recipes
+    const recipes = unfilteredRecipes.filter((elem, pos, arr) => arr.indexOf(elem) === pos);
+
+    return Promise.all(recipes
+      .map(async (recipeId) => {
+        let recipe = this.recipes.find(r => r.id === recipeId);
+
+        if (!recipe) {
+          console.warn(`Recipe '${recipeId}' not installed, trying to fetch from server`);
+
+          await this.getRecipePackage(recipeId);
+
+          console.debug('Rerun ServerAPI::getInstalledRecipes');
+          await this.getInstalledRecipes();
+
+          recipe = this.recipes.find(r => r.id === recipeId);
+
+          if (!recipe) {
+            console.warn(`Could not load recipe ${recipeId}`);
+            return null;
+          }
+        }
+
+        return recipe;
+      }),
+    ).catch(err => console.error('Can\'t load recipe', err));
   }
 
   _mapRecipePreviewModel(recipes) {
@@ -536,9 +562,16 @@ export default class ServerApi {
         .filter(file => fs.statSync(path.join(recipesDirectory, file)).isDirectory() && file !== 'temp');
 
       const recipes = paths.map((id) => {
-        // eslint-disable-next-line
-        const Recipe = require(id)(RecipeModel);
-        return new Recipe(loadRecipeConfig(id));
+        let Recipe;
+        try {
+          // eslint-disable-next-line
+          Recipe = require(id)(RecipeModel);
+          return new Recipe(loadRecipeConfig(id));
+        } catch (err) {
+          console.error(err);
+        }
+
+        return false;
       }).filter(recipe => recipe.id).map((data) => {
         const recipe = data;
 
@@ -553,7 +586,7 @@ export default class ServerApi {
 
       return recipes;
     } catch (err) {
-      console.debug('Folder `recipe/dev` does not exist');
+      console.debug('Could not load dev recipes');
       return false;
     }
   }

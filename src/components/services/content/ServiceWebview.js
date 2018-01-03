@@ -6,12 +6,18 @@ import Webview from 'react-electron-web-view';
 import classnames from 'classnames';
 
 import ServiceModel from '../../../models/Service';
+import StatusBarTargetUrl from '../../ui/StatusBarTargetUrl';
+import WebviewCrashHandler from './WebviewCrashHandler';
+import ServiceDisabled from './ServiceDisabled';
 
 @observer
 export default class ServiceWebview extends Component {
   static propTypes = {
     service: PropTypes.instanceOf(ServiceModel).isRequired,
     setWebviewReference: PropTypes.func.isRequired,
+    reload: PropTypes.func.isRequired,
+    isAppMuted: PropTypes.bool.isRequired,
+    enable: PropTypes.func.isRequired,
   };
 
   static defaultProps = {
@@ -20,6 +26,8 @@ export default class ServiceWebview extends Component {
 
   state = {
     forceRepaint: false,
+    targetUrl: '',
+    statusBarVisible: false,
   };
 
   componentDidMount() {
@@ -33,12 +41,26 @@ export default class ServiceWebview extends Component {
     });
   }
 
+  updateTargetUrl = (event) => {
+    let visible = true;
+    if (event.url === '' || event.url === '#') {
+      visible = false;
+    }
+    this.setState({
+      targetUrl: event.url,
+      statusBarVisible: visible,
+    });
+  }
+
   webview = null;
 
   render() {
     const {
       service,
       setWebviewReference,
+      reload,
+      isAppMuted,
+      enable,
     } = this.props;
 
     const webviewClasses = classnames({
@@ -47,26 +69,47 @@ export default class ServiceWebview extends Component {
       'services__webview--force-repaint': this.state.forceRepaint,
     });
 
+    let statusBar = null;
+    if (this.state.statusBarVisible) {
+      statusBar = (
+        <StatusBarTargetUrl text={this.state.targetUrl} />
+      );
+    }
+
     return (
       <div className={webviewClasses}>
-        <Webview
-          ref={(element) => { this.webview = element; }}
-
-          autosize
-          src={service.url}
-          preload="./webview/plugin.js"
-          partition={`persist:service-${service.id}`}
-
-          onDidAttach={() => setWebviewReference({
-            serviceId: service.id,
-            webview: this.webview.view,
-          })}
-
-          useragent={service.userAgent}
-
-          disablewebsecurity
-          allowpopups
-        />
+        {service.hasCrashed && (
+          <WebviewCrashHandler
+            name={service.recipe.name}
+            webview={service.webview}
+            reload={reload}
+          />
+        )}
+        {!service.isEnabled ? (
+          <ServiceDisabled
+            name={service.recipe.name}
+            webview={service.webview}
+            enable={enable}
+          />
+        ) : (
+          <Webview
+            ref={(element) => { this.webview = element; }}
+            autosize
+            src={service.url}
+            preload="./webview/plugin.js"
+            partition={`persist:service-${service.id}`}
+            onDidAttach={() => setWebviewReference({
+              serviceId: service.id,
+              webview: this.webview.view,
+            })}
+            onUpdateTargetUrl={this.updateTargetUrl}
+            useragent={service.userAgent}
+            muted={isAppMuted || service.isMuted}
+            disablewebsecurity
+            allowpopups
+          />
+        )}
+        {statusBar}
       </div>
     );
   }

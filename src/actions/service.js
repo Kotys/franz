@@ -4,6 +4,8 @@ export default {
   setActive: {
     serviceId: PropTypes.string.isRequired,
   },
+  setActiveNext: {},
+  setActivePrev: {},
   showAddServiceInterface: {
     recipeId: PropTypes.string.isRequired,
   },
@@ -48,6 +50,10 @@ export default {
     channel: PropTypes.string.isRequired,
     args: PropTypes.object.isRequired,
   },
+  sendIPCMessageToAllServices: {
+    channel: PropTypes.string.isRequired,
+    args: PropTypes.object.isRequired,
+  },
   openWindow: {
     event: PropTypes.object.isRequired,
   },
@@ -61,11 +67,15 @@ export default {
     needle: PropTypes.string.isRequired,
   },
   resetFilter: {},
+  resetStatus: {},
   reorder: {
     oldIndex: PropTypes.number.isRequired,
     newIndex: PropTypes.number.isRequired,
   },
   toggleNotifications: {
+    serviceId: PropTypes.string.isRequired,
+  },
+  toggleAudio: {
     serviceId: PropTypes.string.isRequired,
   },
   openDevTools: {
